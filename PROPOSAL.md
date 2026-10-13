@@ -72,8 +72,8 @@ Everything is open-weight or public. Every split is made once with seed 0 and sa
 | --- | --- | --- |
 | Model under study | `meta-llama/Llama-3.1-8B-Instruct` | 32 layers (0–31), hidden size 4096 |
 | Harm scorer | StrongREJECT fine-tuned evaluator ([dsbowen/strong_reject](https://github.com/dsbowen/strong_reject)) | Gives each response a 0–1 harm score (evaluator `strongreject_finetuned`, which runs on Gemma 2B). We store it × 100 |
-| Evaluation judge (refusal, role adoption, persona agreement, labeling in-the-wild prompts) | One LLM judge chosen before starting, pinned to an exact version | Prompts kept in `configs/judge_prompts/`; keyword rules as a cross-check |
-| Persona-space judge | The OpenAI model used by the assistant-axis pipeline (its default is `gpt-4.1-mini`) | Rates whether each role answer is in role; pinned in `configs/base.yaml` |
+| Evaluation judge (refusal, role adoption, persona agreement, labeling in-the-wild prompts) | `claude-haiku-5-5` (Anthropic API), temperature 0; if it fails the Phase 0 judge validation, escalate to `claude-sonnet-5-5` and revalidate | Prompts kept in `configs/judge_prompts/`; keyword rules as a cross-check |
+| Persona-space judge | `claude-haiku-5-5`, reached by the pipeline's unmodified OpenAI client through Anthropic's OpenAI-compatible endpoint (`OPENAI_BASE_URL=https://api.anthropic.com/v1/`; the pipeline's own default is `gpt-4.1-mini`) | Rates whether each role answer is in role; pinned in `configs/base.yaml`. A deviation from the published pipeline's judge; note it in the Phase 0 report |
 
 ### Datasets
 
@@ -140,7 +140,7 @@ Run the five-step pipeline from the [assistant-axis repo](https://github.com/saf
     - for the 275 roles in `data/roles/instructions/`, with 5 system prompts each (for example "You are a pirate. Respond as a pirate would.")
     - for the default Assistant in `default.json`, with five neutral prompts: an empty system prompt, "You are an AI assistant.", "You are a large language model.", "You are {model_name}." and "Respond as yourself."
 2. **Extract** (`2_activations.py`): the mean post-MLP residual activation over each answer's tokens, at every layer.
-3. **Judge** (`3_judge.py`): an OpenAI model rates each role answer from 0 (refused) to 3 (fully in role). Needs `OPENAI_API_KEY`.
+3. **Judge** (`3_judge.py`): an LLM judge rates each role answer from 0 (refused) to 3 (fully in role). The script's OpenAI client runs unmodified against Anthropic's OpenAI-compatible endpoint (`OPENAI_API_KEY` set to the Anthropic key, `OPENAI_BASE_URL=https://api.anthropic.com/v1/`, judge model `claude-haiku-5-5`); smoke-test a few dozen calls before the full run.
 4. **Role vectors** (`4_vectors.py`): each role's mean over its answers scored 3. The script drops roles with too few such answers; report how many were dropped.
 5. **Axis** (`5_axis.py`): mean default vector minus mean role vector, at every layer.
 
@@ -561,9 +561,9 @@ This section is for the coding agent. The project lives in its own repo and runs
 ### Ask the user for these before starting
 
 - A Hugging Face token with access to `meta-llama/Llama-3.1-8B-Instruct` and to Gemma 2B (the StrongREJECT evaluator runs on Gemma).
-- An `OPENAI_API_KEY` and a budget for the assistant-axis judge, which rates about 165,000 persona-space answers at the default `--question_count 120` (about 330,000 with the full 240 questions).
+- An `ANTHROPIC_API_KEY` (also exported as `OPENAI_API_KEY`, with `OPENAI_BASE_URL`, for the pipeline's client) and a budget for the assistant-axis judge, which rates about 165,000 persona-space answers at the default `--question_count 120` (about 330,000 with the full 240 questions).
 - Which machine to use (a Slurm cluster with L40S GPUs, a lab server, or RunPod), and where results and model files may be stored. Budget about 150 GB of artifact storage: roughly 45 GB of pipeline activations at 120 questions, 60–75 GB of float16 span averages across Phases 0–2, plus adapters and models.
-- Which LLM to use as the evaluation judge, its exact version, and an API key if needed. Using one pinned OpenAI model for both judges keeps one key and one bill.
+- Decided (Paul, October 13, 2026): both judges run on `claude-haiku-5-5` via the one Anthropic key — one key and one bill. Still needed: the account's rate-limit tier, to set the pipeline's `--requests_per_second`/`--batch_size`.
 - A check of the four roleplay wrapper texts copied into `data/raw/roleplay_wrappers.json`.
 - Paul's labels for the 100 sampled answers in Phase 0.
 - **Identity LoRA details from Paul (the † items), needed before the preregistration is tagged in Phase 1:**
